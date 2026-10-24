@@ -53,6 +53,26 @@ def test_invalid(text: str) -> None:
         parse_money(text)
 
 
+@pytest.mark.parametrize("text", ["¥5", "₽5", "-.5 TL", "TL .5", "5! TL", "1;5 TL"])
+def test_reject_unrecognized_characters(text: str) -> None:
+    assert not parse_money_detailed(text).ok
+    with pytest.raises(ParseError):
+        parse_money(text)
+
+
+@pytest.mark.parametrize("marker", ["TL", "TRY", "₺", "lira"])
+@pytest.mark.parametrize("sign", ["-", "−", "–", "eksi"])
+def test_negative_after_currency_prefix(marker: str, sign: str) -> None:
+    assert parse_money(f"{marker} {sign}5") == Decimal("-5")
+
+
+@pytest.mark.parametrize("text", ["--5 TL", "-TL -5", "TL 5-", "5 - TL", "TL eksi -5"])
+def test_reject_misplaced_or_repeated_signs(text: str) -> None:
+    assert not parse_money_detailed(text).ok
+    with pytest.raises(ParseError):
+        parse_money(text)
+
+
 def test_assumptions() -> None:
     assert parse_money_detailed("12").assumptions
     assert not parse_money_detailed("12 TL").assumptions

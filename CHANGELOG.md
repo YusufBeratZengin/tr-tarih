@@ -4,6 +4,13 @@ All notable changes are recorded here, following [Keep a Changelog 1.1](https://
 
 ## [Unreleased]
 
+### Fixed
+
+- Number and money parsers reject unsupported punctuation and currency symbols instead of
+  silently dropping them; decimals without a leading zero are rejected.
+- Negative lira amounts retain their sign after currency prefixes such as `TL -5`;
+  misplaced or repeated signs are rejected.
+
 ## [0.1.0] - 2026-10-24
 
 ### Added

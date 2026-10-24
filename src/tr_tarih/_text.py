@@ -7,6 +7,7 @@ import re
 _FOLD = str.maketrans("çğıöşüâîû", "cgiosuaiu")
 _APOSTROPHE_SUFFIX = re.compile(r"['\u2019\u02bc`\u00b4]([a-zA-ZçğıöşüÇĞİÖŞÜâîû]*)")
 _TOKEN = re.compile(r"\d+(?:[./:,-]\d+)*|[a-z]+|[₺$€£]")
+_STRICT_TOKEN = re.compile(_TOKEN.pattern + r"|[^\s]")
 
 #: Case/ending forms that may follow a month or weekday stem ("Ekim" -> "ekimde").
 SUFFIXES = frozenset(
@@ -30,14 +31,15 @@ def fold(text: str) -> str:
     return turkish_lower(text).translate(_FOLD)
 
 
-def tokenize(text: str) -> list[str]:
+def tokenize(text: str, *, strict: bool = False) -> list[str]:
     """Split text into folded tokens; apostrophe suffixes (``3'te``) are dropped.
 
     Numbers keep their separators (``23.10.2026``, ``15:30``, ``1.250,50``) so the
     callers can interpret them; currency symbols are kept as single tokens.
+    Strict mode preserves every other non-whitespace character for validation.
     """
     cleaned = _APOSTROPHE_SUFFIX.sub("", text.replace("\u00a0", " "))
-    return _TOKEN.findall(fold(cleaned))
+    return (_STRICT_TOKEN if strict else _TOKEN).findall(fold(cleaned))
 
 
 def matches_stem(token: str, stems: tuple[str, ...]) -> bool:

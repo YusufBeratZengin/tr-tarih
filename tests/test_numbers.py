@@ -71,6 +71,13 @@ def test_invalid(text: str) -> None:
         parse_number(text)
 
 
+@pytest.mark.parametrize("text", ["-.5", ".5", ",5", "5.", "1;5", "5!", "¥5", "5−"])
+def test_reject_unrecognized_characters(text: str) -> None:
+    assert not parse_number_detailed(text).ok
+    with pytest.raises(ParseError):
+        parse_number(text)
+
+
 @pytest.mark.parametrize(
     "value",
     [

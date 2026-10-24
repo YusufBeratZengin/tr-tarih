@@ -34,10 +34,9 @@ def parse_money_detailed(text: str) -> ParseResult[Decimal]:
 
 
 def _parse_money(text: str) -> ParseResult[Decimal]:
-    stripped = text.strip()
-    negative = stripped[:1] in ("-", "−", "–") or stripped[1:2] in ("-", "−")
-    tokens = tokenize(stripped)
-    if tokens and tokens[0] == "eksi":
+    tokens = tokenize(text, strict=True)
+    negative = False
+    if tokens and tokens[0] in ("-", "−", "–", "eksi"):
         negative, tokens = True, tokens[1:]
     for token in tokens:
         if token in _FOREIGN:
@@ -50,6 +49,10 @@ def _parse_money(text: str) -> ParseResult[Decimal]:
     marker = False
     if _is_lira(tokens[0]) and len(tokens) > 1:
         marker, i = True, 1
+        if not negative and tokens[i] in ("-", "−", "–", "eksi"):
+            negative, i = True, i + 1
+    if i == len(tokens):
+        return failure(text, "metinde tutar yok")
     scanned = scan_number(tokens, i)
     if scanned is None:
         return failure(text, f"tutar olarak anlaşılamadı: {tokens[i]!r}")

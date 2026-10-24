@@ -182,10 +182,9 @@ def simplify(value: Decimal) -> int | Decimal:
 
 def parse_number_detailed(text: str) -> ParseResult[int | Decimal]:
     """Parse a Turkish number; never raises. See :func:`parse_number`."""
-    stripped = text.strip()
-    negative = stripped[:1] in ("-", "−", "–")
-    tokens = tokenize(stripped)
-    if tokens and tokens[0] == "eksi":
+    tokens = tokenize(text, strict=True)
+    negative = False
+    if tokens and tokens[0] in ("-", "−", "–", "eksi"):
         negative, tokens = True, tokens[1:]
     if not tokens:
         return failure(text, "metinde sayı yok")
