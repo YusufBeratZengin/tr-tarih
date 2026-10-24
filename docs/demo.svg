@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="376" viewBox="0 0 720 376" role="img" aria-labelledby="title description">
+<title id="title">tr-tarih terminal demo</title>
+<desc id="description">Actual output of Turkish date, number and lira parsing.</desc>
+<rect width="720" height="376" rx="12" fill="#0f172a"/>
+<circle cx="24" cy="24" r="6" fill="#f87171"/>
+<circle cx="44" cy="24" r="6" fill="#fbbf24"/>
+<circle cx="64" cy="24" r="6" fill="#4ade80"/>
+<g font-family="DejaVu Sans Mono,Consolas,monospace" font-size="14">
+<text x="24" y="78" fill="#93c5fd">$ tr-tarih date &#x27;yarın saat 15:30&#x27; --now 2026-10-23T10:00</text>
+<text x="24" y="103" fill="#e2e8f0">2026-10-24T15:30:00</text>
+<text x="24" y="128" fill="#e2e8f0"></text>
+<text x="24" y="153" fill="#93c5fd">$ tr-tarih number &#x27;iki yüz elli bin&#x27;</text>
+<text x="24" y="178" fill="#e2e8f0">250000</text>
+<text x="24" y="203" fill="#e2e8f0"></text>
+<text x="24" y="228" fill="#93c5fd">$ tr-tarih money &#x27;beş lira elli kuruş&#x27;</text>
+<text x="24" y="253" fill="#e2e8f0">5.5</text>
+<text x="24" y="278" fill="#e2e8f0"></text>
+<text x="24" y="303" fill="#93c5fd">$ tr-tarih fmt-money 1250.5</text>
+<text x="24" y="328" fill="#e2e8f0">₺1.250,50</text>
+<text x="24" y="353" fill="#e2e8f0"></text>
+</g>
+</svg>

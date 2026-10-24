@@ -1,0 +1,42 @@
+name: Bug report
+description: Report a reproducible parsing, formatting or CLI problem.
+labels: [bug]
+body:
+  - type: checkboxes
+    attributes:
+      label: Before reporting
+      options:
+        - label: I searched existing issues.
+          required: true
+        - label: This report uses synthetic data and contains no secrets or private data.
+          required: true
+  - type: input
+    id: version
+    attributes:
+      label: tr-tarih version
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Operating system and Python version
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      description: Include a minimal command or Python snippet and a fixed now reference.
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Expected and actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Sanitized logs
+      render: text

@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ['3.10', '3.11', '3.12', '3.13', '3.14']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+      - run: python -m pip install -e ".[dev]"
+      - run: python -m ruff check .
+      - run: python -m mypy src
+      - run: python -m pytest -q
+      - run: python examples/basic.py
+      - run: python scripts/make-demo.py
+      - run: git diff --exit-code -- docs/demo.svg
+      - run: tr-tarih --version
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install build twine
+      - run: python -m build
+      - run: python -m twine check dist/*
+      - run: python -m pip install --no-deps dist/*.whl
+      - run: tr-tarih --version
+      - name: Check wheel typing marker and metadata
+        run: >-
+          python -c "from importlib.metadata import distribution;
+          d = distribution('tr-tarih');
+          assert any(str(f) == 'tr_tarih/py.typed' for f in d.files);
+          assert not d.requires or all('extra ==' in r for r in d.requires)"
