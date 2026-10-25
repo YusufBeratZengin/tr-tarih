@@ -160,3 +160,16 @@ def test_relative(seconds: int, expected: str) -> None:
 
 def test_relative_default() -> None:
     assert format_relative(datetime.now(timezone.utc)) == "şimdi"
+
+
+def test_dates_edge_cases() -> None:
+    assert parse_datetime("sabahta saat 8", now=NOW) == datetime(2026, 10, 23, 8, 0)
+    assert parse_datetime("gece yarısı saat 0", now=NOW) == datetime(2026, 10, 23, 0, 0)
+
+    unclear_clock = parse_datetime_detailed("saat yarın", now=NOW)
+    assert not unclear_clock.ok
+    assert unclear_clock.reason and "geçerli bir saat yok" in unclear_clock.reason
+
+    conflicting = parse_datetime_detailed("23 Ekim 2026 2 gün önce", now=NOW)
+    assert not conflicting.ok
+    assert conflicting.reason and "birden fazla tarih ifadesi" in conflicting.reason

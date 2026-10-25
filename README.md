@@ -84,6 +84,10 @@ Run `python examples/basic.py` from the checkout; installation is optional. Its 
 bin iki yüz elli
 ```
 
+Additional standalone examples:
+- `python examples/dates_and_times.py`: Natural language dates, day periods, relative offsets and formatting.
+- `python examples/money_and_numbers.py`: Spelled numbers, currency parsing, formatting styles and error handling.
+
 ## Configuration / options
 
 No configuration file, locale setup or network access is required.
@@ -96,6 +100,7 @@ No configuration file, locale setup or network access is required.
 | `fmt-date` | `--style long/short/iso`, `--no-weekday` | Long, includes weekday |
 | `fmt-money` | `--style symbol/suffix/words` | `₺1.250,50` |
 | `ago` | `--now` ISO reference | Current time in the value's timezone |
+| `format_date` | `weekday`, `style` (`long`/`short`/`iso`) | `True`, `long` |
 | `format_datetime` | `weekday`, `seconds` | `True`, `False` |
 | `format_number` | `decimals` (non-negative integer) | Preserve fractional digits |
 | `format_money` | `style`, `cents` | `symbol`, `True` |

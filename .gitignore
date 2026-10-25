@@ -2,6 +2,7 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 .venv/
+uv.lock
 .devtools/
 .pytest_cache/
 pytest-cache-files-*/

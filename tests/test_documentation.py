@@ -44,6 +44,17 @@ def test_example_output(capsys: pytest.CaptureFixture[str]) -> None:
         assert "```text\n" + output + "```" in (ROOT / readme).read_text(encoding="utf-8")
 
 
+@pytest.mark.parametrize(
+    "example_name",
+    ["basic.py", "dates_and_times.py", "money_and_numbers.py"],
+)
+def test_all_examples_run(example_name: str, capsys: pytest.CaptureFixture[str]) -> None:
+    runpy.run_path(str(ROOT / "examples" / example_name), run_name="__main__")
+    captured = capsys.readouterr()
+    assert captured.out
+    assert not captured.err
+
+
 def test_demo_is_reproducible_and_accessible() -> None:
     generator = runpy.run_path(str(ROOT / "scripts" / "make-demo.py"))
     generated = generator["render"]()

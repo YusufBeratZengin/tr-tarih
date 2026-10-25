@@ -84,6 +84,10 @@ Proje kökünden `python examples/basic.py` çalıştırın; kurulum zorunlu de�
 bin iki yüz elli
 ```
 
+Diğer bağımsız örnekler:
+- `python examples/dates_and_times.py`: Doğal takvim ifadeleri, gün bölümleri, göreli zaman farkları ve biçimlendirme.
+- `python examples/money_and_numbers.py`: Yazıyla sayılar, TL ayrıştırma, biçimlendirme stilleri ve hata yönetimi.
+
 ## Yapılandırma / seçenekler
 
 Ayar dosyası, locale kurulumu veya ağ bağlantısı gerekmez.
@@ -96,6 +100,7 @@ Ayar dosyası, locale kurulumu veya ağ bağlantısı gerekmez.
 | `fmt-date` | `--style long/short/iso`, `--no-weekday` | Uzun biçim, gün adı dahil |
 | `fmt-money` | `--style symbol/suffix/words` | `₺1.250,50` |
 | `ago` | ISO referansı `--now` | Değerin saat dilimindeki mevcut zaman |
+| `format_date` | `weekday`, `style` (`long`/`short`/`iso`) | `True`, `long` |
 | `format_datetime` | `weekday`, `seconds` | `True`, `False` |
 | `format_number` | `decimals` (negatif olmayan tam sayı) | Kesir basamakları korunur |
 | `format_money` | `style`, `cents` | `symbol`, `True` |

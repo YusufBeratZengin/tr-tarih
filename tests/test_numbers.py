@@ -127,3 +127,16 @@ def test_formatting() -> None:
     assert format_number(0) == "0"
     with pytest.raises(TypeError):
         format_number(1.5)  # type: ignore[arg-type]
+
+
+def test_number_parsing_edge_cases() -> None:
+    consecutive_scales = parse_number_detailed("milyar milyon")
+    assert not consecutive_scales.ok
+    assert consecutive_scales.reason and "milyon" in consecutive_scales.reason
+
+    zero_after_unit = parse_number_detailed("on sıfır")
+    assert not zero_after_unit.ok
+    assert zero_after_unit.reason and "sifir" in zero_after_unit.reason
+
+    with pytest.raises(ValueError, match="decimals must be a non-negative integer"):
+        format_number(10, decimals=-1)

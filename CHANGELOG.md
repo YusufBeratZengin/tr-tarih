@@ -4,6 +4,16 @@ All notable changes are recorded here, following [Keep a Changelog 1.1](https://
 
 ## [Unreleased]
 
+### Added
+
+- Runnable standalone examples for date/time parsing (`examples/dates_and_times.py`) and number/lira processing (`examples/money_and_numbers.py`).
+- Dedicated examples documentation (`examples/README.md`) and automated clean execution tests for all example scripts.
+- Additional test coverage for period stem suffixes, conflicting date offsets, empty currency markers, consecutive scale words, and invalid formatting arguments.
+
+### Documentation
+
+- Documented additional examples and added `format_date` to options tables across English and Turkish READMEs.
+
 ### Fixed
 
 - Number and money parsers reject unsupported punctuation and currency symbols instead of

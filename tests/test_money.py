@@ -103,3 +103,10 @@ def test_bad_format_arguments() -> None:
         format_money(1.5)  # type: ignore[arg-type]
     with pytest.raises(ValueError):
         format_money(1, style="other")  # type: ignore[arg-type]
+
+
+def test_money_prefix_without_amount() -> None:
+    for text in ("TL -", "lira eksi"):
+        result = parse_money_detailed(text)
+        assert not result.ok
+        assert result.reason == "metinde tutar yok"
