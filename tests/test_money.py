@@ -87,7 +87,7 @@ def test_format() -> None:
     assert format_money(0, style="words") == "sıfır lira"
     for value in (Decimal("-5.50"), Decimal("0"), Decimal("1250.01")):
         for style in ("symbol", "suffix", "words"):
-            assert parse_money(format_money(value, style=style)) == value  # type: ignore[arg-type]
+            assert parse_money(format_money(value, style=style)) == value
 
 
 @pytest.mark.parametrize("value", ["invalid", "Infinity", "NaN"])
