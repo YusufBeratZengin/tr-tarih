@@ -5,6 +5,7 @@ from datetime import date, datetime, timedelta, timezone
 import pytest
 
 from tr_tarih import (
+    DateParser,
     ParseError,
     format_date,
     format_datetime,
@@ -173,3 +174,189 @@ def test_dates_edge_cases() -> None:
     conflicting = parse_datetime_detailed("23 Ekim 2026 2 gün önce", now=NOW)
     assert not conflicting.ok
     assert conflicting.reason and "birden fazla tarih ifadesi" in conflicting.reason
+
+
+@pytest.mark.parametrize(
+    ("expr", "expected_snippet"),
+    [
+        ("hafta sonu", "hafta sonu"),
+        ("hafta içi", "hafta içi"),
+        ("hafta başı", "hafta başı"),
+        ("hafta başında", "hafta başı"),
+        ("ay başı", "ay başı"),
+        ("ayın başı", "ay başı"),
+        ("ay ortası", "ay ortası"),
+        ("ayın ortası", "ay ortası"),
+        ("ay sonu", "ay sonu"),
+        ("ayın sonu", "ay sonu"),
+        ("akşamüstü", "akşamüstü"),
+        ("akşama doğru", "akşama doğru"),
+        ("sabaha karşı", "sabaha karşı"),
+        ("öğleye doğru", "öğleye doğru"),
+        ("geceye doğru", "geceye doğru"),
+        ("birazdan", "birazdan"),
+        ("az sonra", "az sonra"),
+        ("yakında", "yakında"),
+        ("yakın zamanda", "yakın zamanda"),
+        ("birkaç gün sonra", "birkaç"),
+        ("birkaç saat önce", "birkaç"),
+        ("gelecek hafta", "gün belirtilmemiş"),
+        ("bu hafta", "gün belirtilmemiş"),
+        ("geçen hafta", "gün belirtilmemiş"),
+        ("önümüzdeki hafta", "gün belirtilmemiş"),
+        ("15", "yalnızca sayı verilmiş"),
+    ],
+)
+def test_ambiguous_expressions_explained(expr: str, expected_snippet: str) -> None:
+    result = parse_datetime_detailed(expr, now=NOW)
+    assert not result.ok
+    assert result.reason is not None and expected_snippet in result.reason
+    with pytest.raises(ParseError) as exc_info:
+        parse_datetime(expr, now=NOW)
+    assert expected_snippet in str(exc_info.value)
+
+
+@pytest.mark.parametrize(
+    "expr",
+    [
+        "sabah 15:00",
+        "sabah 19",
+        "öğleden önce 14:00",
+        "öğle 20:00",
+        "öğle 8",
+        "öğleden sonra 9",
+        "öğleden sonra 21:00",
+        "ikindi 9",
+        "ikindi 20:00",
+        "akşam 2",
+        "akşam 15:00",
+        "gece 14:00",
+        "gece yarısı 3",
+    ],
+)
+def test_contradictory_periods_and_hours(expr: str) -> None:
+    result = parse_datetime_detailed(expr, now=NOW)
+    assert not result.ok
+    assert result.reason is not None and "çelişiyor" in result.reason
+    with pytest.raises(ParseError, match="çelişiyor"):
+        parse_datetime(expr, now=NOW)
+
+
+def test_timezone_and_reference_api() -> None:
+    # 1. string timezone names and offsets
+    res_ist = parse_datetime("yarın saat 15:30", reference=NOW, tz="Europe/Istanbul")
+    assert res_ist.tzinfo is not None
+    assert res_ist.hour == 15 and res_ist.minute == 30 and res_ist.day == 24
+
+    res_utc = parse_datetime("yarın saat 15:30", reference=NOW, tz="UTC")
+    assert res_utc == datetime(2026, 10, 24, 15, 30, tzinfo=timezone.utc)
+
+    res_offset = parse_datetime("yarın saat 15:30", reference=NOW, tz="+03:00")
+    assert res_offset.tzinfo == timezone(timedelta(hours=3))
+
+    res_neg_offset = parse_datetime("yarın saat 15:30", reference=NOW, tz="-05:00")
+    assert res_neg_offset.tzinfo == timezone(timedelta(hours=-5))
+
+    res_tsi = parse_datetime("yarın saat 15:30", reference=NOW, tz="TSİ")
+    assert res_tsi.tzinfo == timezone(timedelta(hours=3), name="TSİ")
+
+    res_trt = parse_datetime("yarın saat 15:30", reference=NOW, timezone="TRT")
+    assert res_trt.tzinfo == timezone(timedelta(hours=3), name="TRT")
+
+    # 2. date as reference
+    res_date_ref = parse_datetime("yarın saat 12:00", reference=date(2026, 10, 23))
+    assert res_date_ref == datetime(2026, 10, 24, 12, 0)
+
+    # 3. parse_date with reference and timezone
+    d = parse_date("yarın", reference=NOW, tz="+03:00")
+    assert d == date(2026, 10, 24)
+
+    res_d_detailed = parse_date_detailed("yarın", reference=NOW, tz="+03:00")
+    assert res_d_detailed.ok and res_d_detailed.value == date(2026, 10, 24)
+
+    # 4. Error on conflicting arguments
+    with pytest.raises(ValueError, match="hem 'now' hem 'reference'"):
+        parse_datetime("yarın", now=NOW, reference=datetime(2025, 1, 1))
+
+    with pytest.raises(ValueError, match="hem 'tz' hem 'timezone'"):
+        parse_datetime("yarın", tz="UTC", timezone="+03:00")
+
+    # 5. Invalid timezone handling
+    unclear_tz = parse_datetime_detailed("yarın", reference=NOW, tz="Gecersiz/Bolge")
+    assert not unclear_tz.ok
+    assert unclear_tz.reason and "geçersiz veya bilinmeyen saat dilimi" in unclear_tz.reason
+
+    with pytest.raises(ParseError, match="geçersiz veya bilinmeyen saat dilimi"):
+        parse_datetime("yarın", reference=NOW, tz="Gecersiz/Bolge")
+
+    with pytest.raises(TypeError, match="referans zaman datetime veya date"):
+        parse_datetime_detailed("yarın", reference=12345)  # type: ignore[arg-type]
+
+
+def test_date_parser_class() -> None:
+    tz = timezone(timedelta(hours=3), name="TSİ")
+    parser = DateParser(reference=NOW, tz=tz)
+
+    dt = parser.parse_datetime("yarın saat 15:30")
+    assert dt == datetime(2026, 10, 24, 15, 30, tzinfo=tz)
+
+    dt_res = parser.parse_datetime_detailed("yarın saat 15:30")
+    assert dt_res.ok and dt_res.value == dt
+
+    d = parser.parse_date("yarın")
+    assert d == date(2026, 10, 24)
+
+    d_res = parser.parse_date_detailed("yarın")
+    assert d_res.ok and d_res.value == d
+
+
+def test_text_embedded_timezones() -> None:
+    # TSİ in text
+    res1 = parse_datetime("23 Ekim 2026 saat 15:30 TSİ", now=NOW)
+    assert res1.tzinfo == timezone(timedelta(hours=3), name="TSİ")
+    assert res1.hour == 15 and res1.minute == 30
+
+    # UTC in text
+    res2 = parse_datetime("23 Ekim 2026 15:30 UTC", now=NOW)
+    assert res2.tzinfo == timezone.utc
+    assert res2.hour == 15
+
+    # UTC+3 in text
+    res3 = parse_datetime("23 Ekim 2026 15:30 UTC+3", now=NOW)
+    assert res3.tzinfo == timezone(timedelta(hours=3))
+    assert res3.hour == 15
+
+    # Target timezone conversion
+    res4 = parse_datetime("23 Ekim 2026 15:30 UTC", now=NOW, tz="+03:00")
+    assert res4.tzinfo == timezone(timedelta(hours=3))
+    assert res4.hour == 18 and res4.minute == 30
+
+    # Offset in text
+    res5 = parse_datetime("23 Ekim 2026 15:30 +03:00", now=NOW)
+    assert res5.tzinfo == timezone(timedelta(hours=3))
+    assert res5.hour == 15
+
+    # ISO strings with timezone offsets
+    iso1 = parse_datetime("2026-10-23T15:30:00+03:00")
+    assert iso1 == datetime(2026, 10, 23, 15, 30, tzinfo=timezone(timedelta(hours=3)))
+
+    iso2 = parse_datetime("2026-10-23T15:30:00Z")
+    assert iso2 == datetime(2026, 10, 23, 15, 30, tzinfo=timezone.utc)
+
+    iso3 = parse_datetime("2026-10-23 15:30:00+03:00")
+    assert iso3 == datetime(2026, 10, 23, 15, 30, tzinfo=timezone(timedelta(hours=3)))
+
+
+def test_strict_mode() -> None:
+    # Missing year requires assumption
+    res_assumed = parse_datetime_detailed("23 Ekim saat 10:00", now=NOW, strict=False)
+    assert res_assumed.ok and len(res_assumed.assumptions) > 0
+
+    res_strict = parse_datetime_detailed("23 Ekim saat 10:00", now=NOW, strict=True)
+    assert not res_strict.ok
+    assert res_strict.reason and "varsayım gerekiyor" in res_strict.reason
+
+    # Fully specified datetime succeeds in strict mode
+    res_full = parse_datetime_detailed("23 Ekim 2026 saat 10:00", now=NOW, strict=True)
+    assert res_full.ok
+    assert res_full.value == datetime(2026, 10, 23, 10, 0)

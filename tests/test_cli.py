@@ -14,6 +14,14 @@ from tr_tarih.cli import main, run
     ("args", "output"),
     [
         (["date", "yarın saat 15:30", "--now", "2026-10-23T10:00"], "2026-10-24T15:30:00"),
+        (
+            ["date", "yarın saat 15:30", "--reference", "2026-10-23T10:00", "--tz", "+03:00"],
+            "2026-10-24T15:30:00+03:00",
+        ),
+        (
+            ["date", "yarın saat 15:30", "--reference", "2026-10-23T10:00", "--timezone", "UTC"],
+            "2026-10-24T15:30:00+00:00",
+        ),
         (["number", "iki yüz elli bin"], "250000"),
         (["number", "sıfır"], "0"),
         (["money", "5 lira 50 kuruş"], "5.5"),
@@ -91,3 +99,13 @@ def test_result_contract() -> None:
     assert result.ok and result.unwrap() == 0
     with pytest.raises(ParseError, match="anlaşılamadı"):
         ParseResult[int](text="unknown").unwrap()
+
+
+def test_cli_date_strict_and_ambiguous(capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["date", "23 Ekim", "--reference", "2026-10-23T10:00", "--strict"]) == 1
+    captured = capsys.readouterr()
+    assert "varsayım gerekiyor" in captured.err
+
+    assert main(["date", "hafta sonu"]) == 1
+    captured = capsys.readouterr()
+    assert "hafta sonu" in captured.err
