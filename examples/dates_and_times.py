@@ -14,6 +14,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from tr_tarih import (  # noqa: E402
+    DateParser,
     format_date,
     format_datetime,
     format_relative,
@@ -68,6 +69,15 @@ def main() -> None:
     for label, target in targets:
         relative = format_relative(target, now=now)
         print(f"  {label:<15} ({target.date()}) -> {relative}")
+
+    # 5. Timezones and ambiguous expressions
+    print("\n--- 5. Timezones & ambiguous expressions ---")
+    parser = DateParser(reference=now, tz="Europe/Istanbul")
+    dt_tz = parser.parse_datetime("yarın saat 15:30")
+    print(f"  Istanbul tz     : {dt_tz.isoformat()}")
+
+    ambiguous = parse_datetime_detailed("hafta sonu", reference=now)
+    print(f"  Ambiguous phrase: {ambiguous.text} -> reason: {ambiguous.reason}")
 
 
 if __name__ == "__main__":

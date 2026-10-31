@@ -61,12 +61,16 @@ tr-tarih ago 2026-10-26 --now 2026-10-23
 
 ```python
 from datetime import datetime
-from tr_tarih import format_money, parse_datetime, parse_money, parse_number
+from tr_tarih import DateParser, format_money, parse_datetime, parse_money, parse_number
 
 reference = datetime(2026, 10, 23, 10)
 assert parse_datetime("yarın saat 15:30", reference).isoformat() == "2026-10-24T15:30:00"
+assert parse_datetime("yarın saat 15:30", reference, tz="+03:00").isoformat() == "2026-10-24T15:30:00+03:00"
 assert parse_number("iki yüz elli bin") == 250000
 assert format_money(parse_money("beş lira elli kuruş")) == "₺5,50"
+
+parser = DateParser(reference=reference, tz="UTC")
+assert parser.parse_datetime("yarın saat 15:30").isoformat() == "2026-10-24T15:30:00+00:00"
 ```
 
 `parse_date`, `parse_datetime`, `parse_number` ve `parse_money`, belirsiz girdide `ValueError` alt sınıfı olan `ParseError` fırlatır. `*_detailed` sürümleri ise değiştirilemeyen bir `ParseResult` döndürür: `.ok`, `.value`, `.reason`, `.assumptions` ve `.unwrap()` kullanılabilir.
@@ -94,12 +98,13 @@ Ayar dosyası, locale kurulumu veya ağ bağlantısı gerekmez.
 
 | Komut / API | Seçenekler | Varsayılan |
 | --- | --- | --- |
-| `date` | ISO referansı `--now`, `--json`, `--explain` | Yerel mevcut zaman |
+| `date` | `--now` / `--reference`, `--tz` / `--timezone`, `--strict`, `--json`, `--explain` | Yerel mevcut zaman |
+| `DateParser` | `reference`, `tz` / `timezone`, `strict` | Yerel mevcut zaman, saat dilimsiz |
 | `number`, `money` | `--json`, `--explain` | Düz metin |
 | `words` | Ondalık nokta veya virgül içeren sayı | Türkçe sayı sözleri |
 | `fmt-date` | `--style long/short/iso`, `--no-weekday` | Uzun biçim, gün adı dahil |
 | `fmt-money` | `--style symbol/suffix/words` | `₺1.250,50` |
-| `ago` | ISO referansı `--now` | Değerin saat dilimindeki mevcut zaman |
+| `ago` | ISO referansı `--now`, `--tz` | Değerin saat dilimindeki mevcut zaman |
 | `format_date` | `weekday`, `style` (`long`/`short`/`iso`) | `True`, `long` |
 | `format_datetime` | `weekday`, `seconds` | `True`, `False` |
 | `format_number` | `decimals` (negatif olmayan tam sayı) | Kesir basamakları korunur |
@@ -107,16 +112,16 @@ Ayar dosyası, locale kurulumu veya ağ bağlantısı gerekmez.
 
 ## Nasıl çalışır?
 
-Türkçeye uygun harf dönüşümü; noktalı/noktasız I, ASCII yazımlar ve yaygın ekleri işler. Kurallı ayrıştırıcı sayıları, takvim ifadelerini, hafta günlerini ve süreleri okur. İşlenemeyen sözcükler veya çelişen tarihler varsa sonuç yerine gerekçe döner.
+Türkçeye uygun harf dönüşümü; noktalı/noktasız I, ASCII yazımlar ve yaygın ekleri işler. Kurallı ayrıştırıcı sayıları, takvim ifadelerini, hafta günlerini, süreleri ve saat dilimlerini (`TSİ`, `TRT`, `UTC`, `GMT`, `Z`, `+03:00`) okur. İşlenemeyen sözcükler, çelişkili zaman bölümleri, belirsiz Türkçe ifadeler (`hafta sonu`, `hafta içi`, `akşamüstü`, `sabaha karşı`, `birkaç gün sonra`, gün adı belirtilmeyen `gelecek hafta`) veya çelişen tarihler varsa tahmin yürütmek yerine açıklamalı bir gerekçe döner.
 
 Ay/yıl eklerken gün, hedef ayın son gününü aşmaz: 31 Ocak'tan bir ay sonrası 28 veya 29 Şubat'tır. Saat verilmeyen tarih gece yarısına ayarlanır; süre ekleme işlemi referans saati korur. Tek başına gün adı bugün veya sonraki ilk eşleşmedir. `gelecek cuma` kesinlikle gelecekteki cuma, `bu cuma` ise pazartesi başlayan mevcut haftanın cumasıdır. Eksik yılda referans yılı kullanılır. İki basamaklı yıllar 2000–2099 aralığına karşılık gelir.
 
-12'den küçük yalın saatlerde gün bölümü (`akşam yedi`) veya açık saat biçimi (`07:00`) gerekir. Saat belirtilmezse sabah 08:00, öğle 12:00, öğleden önce 10:00, öğleden sonra 15:00, ikindi 16:00, akşam 19:00, gece 22:00, gece yarısı 00:00 kullanılır. Ayrıntılı sonuçlar eksik yıl, yalın hafta günü, gün bölümü saati ve eksik para birimi varsayımlarını gösterir.
+12'den küçük yalın saatlerde gün bölümü (`akşam yedi`) veya açık saat biçimi (`07:00`) gerekir. Saat belirtilmezse sabah 08:00, öğle 12:00, öğleden önce 10:00, öğleden sonra 15:00, ikindi 16:00, akşam 19:00, gece 22:00, gece yarısı 00:00 kullanılır. Ayrıntılı sonuçlar eksik yıl, yalın hafta günü, gün bölümü saati ve eksik para birimi varsayımlarını gösterir; `strict=True` veya CLI `--strict` ile örtük varsayımlar reddedilebilir.
 
 ## Sınırlar / gizlilik
 
-- Belirli ifadeleri ayrıştırır; genel Türkçe dil modeli veya serbest metinden bilgi çıkarıcı değildir. Yazıyla takvim günü, tatiller, tekrar kuralları ve saat dilimi adları desteklenmez.
-- Tekrarlanabilir sonuç için `now` / `--now` verin. Kütüphane referansın saat dilimini korur; CLI'da ISO saat farkı kullanın. `ago` için iki zamanın da saat dilimi içermesi veya ikisinin de saat dilimsiz olması gerekir.
+- Belirli ifadeleri ayrıştırır; genel Türkçe dil modeli veya serbest metinden bilgi çıkarıcı değildir. Yazıyla takvim günü, tatiller ve tekrar kuralları desteklenmez.
+- Tekrarlanabilir sonuç için `reference` / `now` / `--now` ve `tz` / `--tz` verin. Kütüphane referansın saat dilimini korur; ISO saat farkları, IANA adları (örneğin `Europe/Istanbul`) ve Türkçe saat dilimi kısaltmaları (`TSİ`) desteklenir. `ago` için iki zamanın da saat dilimi içermesi veya ikisinin de saat dilimsiz olması gerekir.
 - Ayraçlar Türkçe kurallara uyar: `1.250` sayısı 1250, `1,250` sayısı 1,25 demektir. `1,250.50` gibi İngilizce karma gruplama da kabul edilir. Sayıyı yazıya çevirme `10**18` altındaki büyüklükleri destekler.
 - Yalnızca Türk lirası desteklenir; birim verilmezse TL varsayılır. Biçimlendirme yarımı yukarı yuvarlayarak kuruşa indirir; ayrıştırma girişin hassasiyetini korur. Tutar biçimlendirmesine float ve bool vermeyin; `Decimal`, tam sayı veya ondalık noktalı metin kullanın.
 - Göreli gösterim tam birimler kullanır; ay 30, yıl 365 gündür. On saniyeden küçük fark `şimdi` olarak gösterilir. Takvim ayrıştırmada yıl aralığı 1–9999'dur.

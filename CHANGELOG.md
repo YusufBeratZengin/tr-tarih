@@ -6,6 +6,12 @@ All notable changes are recorded here, following [Keep a Changelog 1.1](https://
 
 ### Added
 
+- Reference time and timezone parsing support (`reference`, `tz`, `timezone` parameters and new `DateParser` class).
+- Support for text-embedded timezone markers (`TSİ`, `TRT`, `UTC`, `GMT`, `Z`, and numeric offsets) as well as full ISO-8601 datetimes with offsets.
+- Explanatory error reporting for ambiguous Turkish expressions (`hafta sonu`, `hafta içi`, `hafta başı`, `ay başı`, `ay ortası`, `ay sonu`, `akşamüstü`, `sabaha karşı`, `öğleye doğru`, `geceye doğru`, `birazdan`, `az sonra`, `yakında`, `birkaç gün sonra`, and relative weeks without weekdays) instead of guessing.
+- Validation for contradictory day periods and clock hours (e.g. `sabah 15:00`, `öğle 20:00`, `gece 14:00`, `akşam 15:00`).
+- Strict parsing mode (`strict=True` and CLI `--strict`) to reject expressions that rely on implicit assumptions.
+- CLI options `--reference`, `--tz`/`--timezone`, and `--strict` for the `date` command.
 - Runnable standalone examples for date/time parsing (`examples/dates_and_times.py`) and number/lira processing (`examples/money_and_numbers.py`).
 - Dedicated examples documentation (`examples/README.md`) and automated clean execution tests for all example scripts.
 - Additional test coverage for period stem suffixes, conflicting date offsets, empty currency markers, consecutive scale words, and invalid formatting arguments.
