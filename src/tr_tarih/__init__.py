@@ -3,6 +3,7 @@
 from .dates import (
     MONTH_NAMES,
     WEEKDAY_NAMES,
+    DateParser,
     format_date,
     format_datetime,
     format_relative,
@@ -17,6 +18,7 @@ from .result import ParseError, ParseResult
 
 __version__ = "0.1.0"
 __all__ = [
+    "DateParser",
     "MONTH_NAMES",
     "WEEKDAY_NAMES",
     "ParseError",

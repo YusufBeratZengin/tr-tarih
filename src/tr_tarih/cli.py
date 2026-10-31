@@ -52,6 +52,18 @@ def _build_parser() -> argparse.ArgumentParser:
 
     date_cmd = with_parse_flags("date", "parse a date/time expression")
     date_cmd.add_argument("--now", type=_iso, help="reference moment, ISO format (default: now)")
+    date_cmd.add_argument("--reference", type=_iso, help="alias for --now")
+    date_cmd.add_argument(
+        "--tz",
+        "--timezone",
+        dest="tz",
+        help="target timezone (e.g. Europe/Istanbul, UTC, +03:00)",
+    )
+    date_cmd.add_argument(
+        "--strict",
+        action="store_true",
+        help="reject ambiguous expressions that require assumptions",
+    )
     with_parse_flags("number", "parse a number (digits or words)")
     with_parse_flags("money", "parse a lira amount")
 
@@ -97,7 +109,10 @@ def _show(result: ParseResult[Any], rendered: str | None, args: argparse.Namespa
 def _dispatch(args: argparse.Namespace) -> int:
     command: str = args.command
     if command == "date":
-        parsed = parse_datetime_detailed(args.text, args.now)
+        ref = getattr(args, "reference", None) or args.now
+        tz = getattr(args, "tz", None)
+        strict = getattr(args, "strict", False)
+        parsed = parse_datetime_detailed(args.text, reference=ref, tz=tz, strict=strict)
         return _show(parsed, parsed.value.isoformat() if parsed.value else None, args)
     if command == "number":
         number = parse_number_detailed(args.text)

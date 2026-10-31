@@ -5,15 +5,16 @@ from __future__ import annotations
 import calendar
 import re
 from dataclasses import dataclass, field
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone, tzinfo
 from decimal import Decimal
 from typing import Literal
 
-from ._text import matches_stem, tokenize
+from ._text import fold, matches_stem, tokenize
 from .numbers import scan_number
 from .result import ParseResult, failure
 
 __all__ = [
+    "DateParser",
     "MONTH_NAMES",
     "WEEKDAY_NAMES",
     "DateStyle",
@@ -50,6 +51,43 @@ _PERIOD_DEFAULT_HOUR = {
     "ikindi": 16, "aksam": 19, "gece": 22, "gece_yarisi": 0,
 }  # fmt: skip
 
+_OFFSET_RE = re.compile(r"^([+-])(\d{1,2})(?::?(\d{2}))?$")
+
+_STATIC_TIMEZONES: dict[str, tzinfo] = {
+    "utc": timezone.utc,
+    "z": timezone.utc,
+    "gmt": timezone.utc,
+    "tsi": timezone(timedelta(hours=3), name="TSİ"),
+    "trt": timezone(timedelta(hours=3), name="TRT"),
+    "europe/istanbul": timezone(timedelta(hours=3), name="Europe/Istanbul"),
+    "istanbul": timezone(timedelta(hours=3), name="Europe/Istanbul"),
+}
+
+
+def _resolve_timezone(tz: tzinfo | str) -> tzinfo:
+    """Resolve a timezone specification (tzinfo or name/offset string) into a tzinfo object."""
+    if isinstance(tz, tzinfo):
+        return tz
+    if not isinstance(tz, str):
+        raise TypeError(f"saat dilimi tzinfo veya str olmalıdır: {type(tz).__name__}")
+    cleaned = tz.strip()
+    folded = fold(cleaned)
+    if folded in _STATIC_TIMEZONES:
+        return _STATIC_TIMEZONES[folded]
+    if match := _OFFSET_RE.fullmatch(cleaned):
+        sign = 1 if match.group(1) == "+" else -1
+        hours = int(match.group(2))
+        minutes = int(match.group(3) or 0)
+        if not (0 <= hours <= 23 and 0 <= minutes <= 59):
+            raise ValueError(f"geçersiz saat dilimi ofseti: {tz!r}")
+        return timezone(sign * timedelta(hours=hours, minutes=minutes))
+    try:
+        from zoneinfo import ZoneInfo
+        return ZoneInfo(cleaned)
+    except Exception:
+        raise ValueError(f"geçersiz veya bilinmeyen saat dilimi: {tz!r}") from None
+
+
 _UNITS = {
     "saniye": "s", "sn": "s", "dakika": "m", "dk": "m", "dak": "m", "saat": "h",
     "gun": "d", "hafta": "w", "ay": "M", "yil": "y", "sene": "y",
@@ -78,6 +116,123 @@ _DM = re.compile(r"(\d{1,2})[./](\d{1,2})")
 
 class _Fail(Exception):
     """Internal: abort parsing with a user-facing reason."""
+
+
+def _check_ambiguous(tokens: list[str]) -> None:
+    if not tokens:
+        return
+    if len(tokens) == 1 and tokens[0].isdigit():
+        raise _Fail(
+            "yalnızca sayı verilmiş; gün için 'ayın 15'i', "
+            "saat için 'saat 15:00' gibi bağlam ekleyin"
+        )
+
+    for i, t in enumerate(tokens):
+        if t == "hafta":
+            nxt = tokens[i + 1] if i + 1 < len(tokens) else ""
+            if nxt == "sonu":
+                raise _Fail(
+                    "ifade belirsiz: 'hafta sonu' cumartesi ve pazar günlerini kapsar; "
+                    "belirli bir gün belirtin (ör. 'cumartesi')"
+                )
+            if nxt in ("ici", "icinde"):
+                raise _Fail(
+                    "ifade belirsiz: 'hafta içi' pazartesi-cuma günlerini kapsar; "
+                    "belirli bir gün belirtin"
+                )
+            if nxt in ("basi", "basinda"):
+                raise _Fail(
+                    "ifade belirsiz: 'hafta başı' yerine belirli bir gün adı belirtin "
+                    "(ör. 'pazartesi')"
+                )
+
+    for i, t in enumerate(tokens):
+        if t in ("ay", "ayin"):
+            nxt = tokens[i + 1] if i + 1 < len(tokens) else ""
+            if nxt in ("basi", "basinda"):
+                raise _Fail(
+                    "ifade belirsiz: 'ay başı' kesin bir gün numarası belirtmez; "
+                    "gün numarası ekleyin (ör. 'ayın 1'i')"
+                )
+            if nxt in ("ortasi", "ortasinda"):
+                raise _Fail(
+                    "ifade belirsiz: 'ay ortası' kesin bir gün numarası belirtmez; "
+                    "gün numarası ekleyin (ör. 'ayın 15'i')"
+                )
+            if nxt in ("sonu", "sonunda"):
+                after_nxt = tokens[i + 2] if i + 2 < len(tokens) else ""
+                if after_nxt not in _GUN:
+                    raise _Fail(
+                        "ifade belirsiz: 'ay sonu' için gün belirtilmemiş; "
+                        "'ayın son günü' ya da gün numarası kullanın"
+                    )
+
+    if "aksamustu" in tokens:
+        raise _Fail(
+            "ifade belirsiz: 'akşamüstü' kesin bir saat belirtmez; "
+            "lütfen kesin bir saat belirtin (ör. 'akşam 18:00')"
+        )
+    for i, t in enumerate(tokens[:-1]):
+        nxt = tokens[i + 1]
+        if t == "aksama" and nxt == "dogru":
+            raise _Fail(
+                "ifade belirsiz: 'akşama doğru' kesin bir saat belirtmez; "
+                "lütfen kesin bir saat belirtin (ör. 'akşam 18:00')"
+            )
+        if t == "sabaha" and nxt == "karsi":
+            raise _Fail(
+                "ifade belirsiz: 'sabaha karşı' kesin bir saat belirtmez; "
+                "lütfen kesin bir saat belirtin (ör. 'sabah 05:00')"
+            )
+        if t == "ogleye" and nxt == "dogru":
+            raise _Fail(
+                "ifade belirsiz: 'öğleye doğru' kesin bir saat belirtmez; "
+                "lütfen kesin bir saat belirtin (ör. 'saat 11:30')"
+            )
+        if t == "geceye" and nxt == "dogru":
+            raise _Fail(
+                "ifade belirsiz: 'geceye doğru' kesin bir saat belirtmez; "
+                "lütfen kesin bir saat belirtin (ör. 'akşam 21:00')"
+            )
+
+    if "birazdan" in tokens:
+        raise _Fail(
+            "ifade belirsiz: 'birazdan' kesin bir süre belirtmez; "
+            "lütfen dakika veya saat belirtin (ör. '15 dakika sonra')"
+        )
+    if "yakinda" in tokens:
+        raise _Fail(
+            "ifade belirsiz: 'yakında' kesin bir tarih veya süre belirtmez; "
+            "lütfen kesin bir tarih belirtin"
+        )
+    for i, t in enumerate(tokens[:-1]):
+        nxt = tokens[i + 1]
+        if t == "az" and nxt in ("sonra", "once"):
+            raise _Fail(
+                "ifade belirsiz: 'az sonra' kesin bir süre belirtmez; "
+                "lütfen dakika veya saat belirtin (ör. '15 dakika sonra')"
+            )
+        if t == "yakin" and nxt in ("zamanda", "zaman"):
+            raise _Fail(
+                "ifade belirsiz: 'yakın zamanda' kesin bir tarih veya süre belirtmez; "
+                "lütfen kesin bir tarih belirtin"
+            )
+        if t == "birkac":
+            raise _Fail(
+                "ifade belirsiz: 'birkaç' kesin bir miktar değildir; "
+                "kesin sayı belirtin (ör. '3 gün sonra')"
+            )
+
+    for i, t in enumerate(tokens[:-1]):
+        nxt = tokens[i + 1]
+        if t in ("gelecek", "onumuzdeki", "bu", "gecen") and nxt in _HAFTA:
+            has_weekday = any(_match_weekday(tok) is not None for tok in tokens)
+            has_day = any(tok.isdigit() and int(tok) <= 31 for tok in tokens)
+            if not has_weekday and not has_day:
+                raise _Fail(
+                    f"ifade belirsiz: '{t} hafta' için gün belirtilmemiş; "
+                    f"gün adı ekleyin (ör. '{t} hafta salı')"
+                )
 
 
 def add_months(day: date, months: int) -> date:
@@ -117,6 +272,7 @@ def _match_period(token: str) -> str | None:
 class _Parser:
     text: str
     now: datetime
+    strict: bool = False
     tokens: list[str] = field(init=False)
     used: list[bool] = field(init=False)
     assumptions: list[str] = field(default_factory=list)
@@ -126,12 +282,67 @@ class _Parser:
     moment: datetime | None = None
     keep_now_time: bool = False
     clock_offset: bool = False
+    parsed_tz: tzinfo | None = None
 
     def __post_init__(self) -> None:
         self.tokens = tokenize(self.text)
         self.used = [False] * len(self.tokens)
 
     # -- helpers -----------------------------------------------------------------
+    def find_timezone(self) -> None:
+        """Detect timezone tokens or offset annotations (TSİ, UTC, GMT, Z, +03:00)."""
+        # 1. Check for UTC/GMT with optional offset (e.g. "UTC+3", "GMT-5", "UTC +03:00")
+        utc_match = re.search(
+            r"\b(?:UTC|GMT)\s*([+-]\s*\d{1,2}(?::?\d{2})?)?\b",
+            self.text,
+            re.IGNORECASE,
+        )
+        if utc_match:
+            offset_part = utc_match.group(1)
+            if offset_part:
+                self.parsed_tz = _resolve_timezone(offset_part.replace(" ", ""))
+            else:
+                self.parsed_tz = timezone.utc
+            for i, token in enumerate(self.tokens):
+                if not self.used[i] and token in ("utc", "gmt"):
+                    self.mark(i)
+                    nxt = self.free(i + 1)
+                    if nxt and (nxt.isdigit() or _OFFSET_RE.fullmatch(nxt)):
+                        self.mark(i + 1)
+                    return
+            return
+
+        # 2. Check for TSİ / TRT / Europe/Istanbul
+        for i, token in enumerate(self.tokens):
+            if not self.used[i] and token in ("tsi", "trt"):
+                self.parsed_tz = _resolve_timezone(token)
+                self.mark(i)
+                return
+
+        # 3. Check for offset following time (e.g. "15:30 +03:00")
+        offset_match = re.search(
+            r"(?:(?:\b\d{1,2}:\d{2}(?::\d{2})?)\s*)([+-]\d{2}(?::?\d{2})?)\b",
+            self.text,
+        )
+        if offset_match:
+            offset_str = offset_match.group(1)
+            try:
+                self.parsed_tz = _resolve_timezone(offset_str)
+                num_part = offset_str.lstrip("+-")
+                for i, token in enumerate(self.tokens):
+                    if not self.used[i] and token == num_part:
+                        self.mark(i)
+                        break
+                return
+            except ValueError:
+                pass
+
+        # 4. Check for 'Z' timezone marker
+        for i, token in enumerate(self.tokens):
+            if not self.used[i] and token == "z":
+                self.parsed_tz = timezone.utc
+                self.mark(i)
+                return
     def masked(self) -> list[str]:
         return ["" if u else t for t, u in zip(self.tokens, self.used, strict=True)]
 
@@ -561,6 +772,8 @@ class _Parser:
     def run(self) -> datetime:
         if not self.tokens:
             raise _Fail("metin boş")
+        _check_ambiguous(self.tokens)
+        self.find_timezone()
         period = self.find_periods()
         self.offsets()
         self.resolve_clock(period)
@@ -574,23 +787,38 @@ class _Parser:
                 raise _Fail(f"anlaşılmayan sözcük: {token!r}")
         if self.moment is not None:
             if self.clock is not None:
-                return datetime.combine(self.moment.date(), time(*self.clock), self.now.tzinfo)
-            return self.moment
-        if self.base is None:
-            if self.clock is None:
-                raise _Fail("tarih ya da saat bulunamadı")
-            self.base = self.now.date()
-        if self.clock is not None:
-            clock = time(*self.clock)
-        elif self.keep_now_time:
-            clock = self.now.timetz().replace(tzinfo=None)
+                dt = datetime.combine(self.moment.date(), time(*self.clock), self.now.tzinfo)
+            else:
+                dt = self.moment
         else:
-            clock = time(0, 0)
-        return datetime.combine(self.base, clock, self.now.tzinfo)
+            if self.base is None:
+                if self.clock is None:
+                    raise _Fail("tarih ya da saat bulunamadı")
+                self.base = self.now.date()
+            if self.clock is not None:
+                clock = time(*self.clock)
+            elif self.keep_now_time:
+                clock = self.now.timetz().replace(tzinfo=None)
+            else:
+                clock = time(0, 0)
+            dt = datetime.combine(self.base, clock, self.now.tzinfo)
+
+        if self.parsed_tz is not None:
+            dt = dt.replace(tzinfo=self.parsed_tz)
+        if self.strict and self.assumptions:
+            raise _Fail(f"belirsiz ifade; varsayım gerekiyor: {'; '.join(self.assumptions)}")
+        return dt
 
 
 def _pretty_period(name: str) -> str:
-    return name.replace("_", " ").replace("ogleden", "öğleden").replace("aksam", "akşam")
+    return (
+        name.replace("_", " ")
+        .replace("ogleden", "öğleden")
+        .replace("aksam", "akşam")
+        .replace("ogle", "öğle")
+        .replace("once", "önce")
+        .replace("yarisi", "yarısı")
+    )
 
 
 def _apply_period(hour: int, period: str | None, explicit: bool, text: str) -> int:
@@ -602,54 +830,254 @@ def _apply_period(hour: int, period: str | None, explicit: bool, text: str) -> i
             f"saat belirsiz ({hour}): 'sabah {hour}' ya da 'akşam {hour}' gibi gün bölümü ekleyin, "
             f"ya da {hour:02d}:00 biçiminde yazın"
         )
-    if hour > 12:
-        return hour
     if period in ("sabah", "ogleden_once"):
+        if explicit and hour >= 12:
+            raise _Fail(
+                f"'{_pretty_period(period)}' gün bölümü ile saat {hour:02d}:00 birbiriyle çelişiyor"
+            )
+        if not (5 <= hour <= 11):
+            raise _Fail(
+                f"'{_pretty_period(period)}' gün bölümü ile saat {hour:02d}:00 birbiriyle çelişiyor"
+            )
         return hour
-    if period == "gece":
-        return 0 if hour == 12 else hour + 12 if hour >= 6 else hour
     if period == "ogle":
-        return hour + 12 if 1 <= hour <= 6 else hour
+        if hour > 12:
+            if not (11 <= hour <= 14):
+                raise _Fail(
+                    f"'{_pretty_period(period)}' gün bölümü ile saat {hour:02d}:00 "
+                    "birbiriyle çelişiyor"
+                )
+            return hour
+        if hour in (11, 12):
+            return hour
+        if 1 <= hour <= 2:
+            return hour + 12
+        raise _Fail(
+            f"'{_pretty_period(period)}' gün bölümü ile saat {hour:02d}:00 birbiriyle çelişiyor"
+        )
+    if period == "ogleden_sonra":
+        if hour > 12:
+            if not (12 <= hour <= 18):
+                raise _Fail(
+                    f"'{_pretty_period(period)}' gün bölümü ile saat {hour:02d}:00 "
+                    "birbiriyle çelişiyor"
+                )
+            return hour
+        if hour == 12:
+            return 12
+        if 1 <= hour <= 6:
+            return hour + 12
+        raise _Fail(
+            f"'{_pretty_period(period)}' gün bölümü ile saat {hour:02d}:00 birbiriyle çelişiyor"
+        )
+    if period == "ikindi":
+        if hour > 12:
+            if not (15 <= hour <= 18):
+                raise _Fail(
+                    f"'{_pretty_period(period)}' gün bölümü ile saat {hour:02d}:00 "
+                    "birbiriyle çelişiyor"
+                )
+            return hour
+        if 3 <= hour <= 6:
+            return hour + 12
+        raise _Fail(
+            f"'{_pretty_period(period)}' gün bölümü ile saat {hour:02d}:00 birbiriyle çelişiyor"
+        )
+    if period == "aksam":
+        if hour > 12:
+            if not (17 <= hour <= 22):
+                raise _Fail(
+                    f"'{_pretty_period(period)}' gün bölümü ile saat {hour:02d}:00 "
+                    "birbiriyle çelişiyor"
+                )
+            return hour
+        if 5 <= hour <= 10:
+            return hour + 12
+        raise _Fail(
+            f"'{_pretty_period(period)}' gün bölümü ile saat {hour:02d}:00 birbiriyle çelişiyor"
+        )
+    if period == "gece":
+        if hour > 12:
+            if not (20 <= hour <= 23):
+                raise _Fail(
+                    f"'{_pretty_period(period)}' gün bölümü ile saat {hour:02d}:00 "
+                    "birbiriyle çelişiyor"
+                )
+            return hour
+        if hour == 12:
+            return 0
+        if hour >= 8:
+            return hour + 12
+        if hour <= 5:
+            return hour
+        raise _Fail(
+            f"'{_pretty_period(period)}' gün bölümü ile saat {hour:02d}:00 birbiriyle çelişiyor"
+        )
     if period == "gece_yarisi":
-        return hour
-    return hour + 12 if hour < 12 else hour  # ogleden_sonra, ikindi, aksam
+        if hour in (0, 12, 24):
+            return 0
+        raise _Fail(f"'gece yarısı' gün bölümü ile saat {hour:02d}:00 birbiriyle çelişiyor")
+    return hour + 12 if hour < 12 else hour
 
 
-def parse_datetime_detailed(text: str, now: datetime | None = None) -> ParseResult[datetime]:
+def parse_datetime_detailed(
+    text: str,
+    now: datetime | date | None = None,
+    *,
+    reference: datetime | date | None = None,
+    tz: tzinfo | str | None = None,
+    timezone: tzinfo | str | None = None,
+    strict: bool = False,
+) -> ParseResult[datetime]:
     """Parse a Turkish date/time expression; return ``value=None`` and a reason if unclear.
 
-    ``now`` is the reference moment (default: ``datetime.now()``); its timezone is kept.
+    ``reference`` / ``now`` sets the reference moment (default: ``datetime.now()``).
+    ``tz`` / ``timezone`` specifies a target timezone (tzinfo object, offset string, or IANA name).
+    ``strict`` disallows implicit assumptions (omitted year, default hours for day periods).
     """
-    reference = now if now is not None else datetime.now()
-    parser = _Parser(text=text, now=reference)
+    if reference is not None and now is not None and reference != now:
+        raise ValueError("hem 'now' hem 'reference' argümanı verilemez")
+    if tz is not None and timezone is not None and tz != timezone:
+        raise ValueError("hem 'tz' hem 'timezone' argümanı verilemez")
+
+    ref_input = reference if reference is not None else now
+    tz_input = tz if tz is not None else timezone
+
+    try:
+        target_tz = _resolve_timezone(tz_input) if tz_input is not None else None
+    except ValueError as exc:
+        return failure(text, str(exc))
+
+    if ref_input is None:
+        ref_moment = datetime.now(target_tz)
+    elif isinstance(ref_input, datetime):
+        if target_tz is not None:
+            ref_moment = (
+                ref_input.replace(tzinfo=target_tz)
+                if ref_input.tzinfo is None
+                else ref_input.astimezone(target_tz)
+            )
+        else:
+            ref_moment = ref_input
+    elif isinstance(ref_input, date):
+        ref_moment = datetime.combine(ref_input, time(0, 0), target_tz)
+    else:
+        raise TypeError(f"referans zaman datetime veya date olmalıdır: {type(ref_input).__name__}")
+
+    stripped = text.strip()
+    if (
+        ("T" in stripped or (" " in stripped and (":" in stripped or "+" in stripped)))
+        and len(stripped) >= 10
+    ):
+        iso_candidate = stripped
+        if iso_candidate.endswith(("Z", "z")):
+            iso_candidate = iso_candidate[:-1] + "+00:00"
+        try:
+            dt = datetime.fromisoformat(iso_candidate)
+            if target_tz is not None:
+                dt = (
+                    dt.astimezone(target_tz)
+                    if dt.tzinfo is not None
+                    else dt.replace(tzinfo=target_tz)
+                )
+            return ParseResult(text=text, value=dt)
+        except ValueError:
+            pass
+
+    parser = _Parser(text=text, now=ref_moment, strict=strict)
     try:
         value = parser.run()
     except _Fail as exc:
         return failure(text, str(exc))
     except (ValueError, OverflowError):
         return failure(text, "tarih veya süre desteklenen aralığın dışında (yıl: 1–9999)")
+
+    if target_tz is not None and value.tzinfo is not None and value.tzinfo != target_tz:
+        value = value.astimezone(target_tz)
+    elif target_tz is not None and value.tzinfo is None:
+        value = value.replace(tzinfo=target_tz)
+
     return ParseResult(text=text, value=value, assumptions=tuple(parser.assumptions))
 
 
-def parse_datetime(text: str, now: datetime | None = None) -> datetime:
+def parse_datetime(
+    text: str,
+    now: datetime | date | None = None,
+    *,
+    reference: datetime | date | None = None,
+    tz: tzinfo | str | None = None,
+    timezone: tzinfo | str | None = None,
+    strict: bool = False,
+) -> datetime:
     """Parse ``"yarın saat 15:30"``, ``"23 Ekim 2026"``, ``"3 gün sonra"``, ...
 
     Raises :class:`~tr_tarih.ParseError` when the expression is unclear; use
     :func:`parse_datetime_detailed` to get a reason instead of an exception.
     """
-    return parse_datetime_detailed(text, now).unwrap()
+    return parse_datetime_detailed(
+        text, now=now, reference=reference, tz=tz, timezone=timezone, strict=strict
+    ).unwrap()
 
 
-def parse_date_detailed(text: str, now: datetime | None = None) -> ParseResult[date]:
+def parse_date_detailed(
+    text: str,
+    now: datetime | date | None = None,
+    *,
+    reference: datetime | date | None = None,
+    tz: tzinfo | str | None = None,
+    timezone: tzinfo | str | None = None,
+    strict: bool = False,
+) -> ParseResult[date]:
     """Like :func:`parse_datetime_detailed` but returns only the calendar date."""
-    result = parse_datetime_detailed(text, now)
+    result = parse_datetime_detailed(
+        text, now=now, reference=reference, tz=tz, timezone=timezone, strict=strict
+    )
     value = result.value.date() if result.value is not None else None
     return ParseResult(text=text, value=value, reason=result.reason, assumptions=result.assumptions)
 
 
-def parse_date(text: str, now: datetime | None = None) -> date:
+def parse_date(
+    text: str,
+    now: datetime | date | None = None,
+    *,
+    reference: datetime | date | None = None,
+    tz: tzinfo | str | None = None,
+    timezone: tzinfo | str | None = None,
+    strict: bool = False,
+) -> date:
     """Like :func:`parse_datetime` but returns only the calendar date."""
-    return parse_date_detailed(text, now).unwrap()
+    return parse_date_detailed(
+        text, now=now, reference=reference, tz=tz, timezone=timezone, strict=strict
+    ).unwrap()
+
+
+@dataclass(frozen=True)
+class DateParser:
+    """Configured Turkish date/time parser with fixed reference moment and timezone."""
+
+    reference: datetime | date | None = None
+    tz: tzinfo | str | None = None
+    strict: bool = False
+
+    def parse_datetime_detailed(self, text: str) -> ParseResult[datetime]:
+        """Parse text into a :class:`~tr_tarih.ParseResult` containing a datetime."""
+        return parse_datetime_detailed(
+            text, reference=self.reference, tz=self.tz, strict=self.strict
+        )
+
+    def parse_datetime(self, text: str) -> datetime:
+        """Parse text into a datetime or raise :class:`~tr_tarih.ParseError`."""
+        return self.parse_datetime_detailed(text).unwrap()
+
+    def parse_date_detailed(self, text: str) -> ParseResult[date]:
+        """Parse text into a :class:`~tr_tarih.ParseResult` containing a date."""
+        return parse_date_detailed(
+            text, reference=self.reference, tz=self.tz, strict=self.strict
+        )
+
+    def parse_date(self, text: str) -> date:
+        """Parse text into a date or raise :class:`~tr_tarih.ParseError`."""
+        return self.parse_date_detailed(text).unwrap()
 
 
 def format_date(value: date | datetime, *, weekday: bool = True, style: DateStyle = "long") -> str:
